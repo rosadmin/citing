@@ -1,6 +1,7 @@
 library(rorcid)
 library(rcrossref)
 library(bibtex)
+library(dplyr)
 library(scitations)
 
 compact <- function(x) Filter(Negate(is.null), x)
@@ -11,7 +12,7 @@ sci <- lapply(cites, function(z) {
   z <- unclass(z)[[1]]
   scitations::scitation(attr(z, "bibtype"), attr(z, "key"), .list = z)
 })
-sci <- compact(dois)
+sci <- compact(sci)
 (scidf <- scitation_df(.list = sci))
 dois <- unname(unlist(compact(lapply(sci, "[[", "doi"))))
 
@@ -27,9 +28,11 @@ wrks <- cr_works(dois = dois)
 wrks <- wrks$data
 wrks <- wrks %>% rename(doi = DOI)
 
+
+
 ## flatten
 ### funders
-fund <- stats::setNames(lapply(alldat$funder, function(z) {
+fund <- lapply(wrks$funder, function(z) {
   if (length(z) == 0) {
     dplyr::data_frame()
   } else {
@@ -38,13 +41,15 @@ fund <- stats::setNames(lapply(alldat$funder, function(z) {
       if (all(is.na(tmp))) NA else paste0(tmp, collapse = ", ")
     }))
     z <- select(z, -starts_with("award"))
-    data.frame(z, award = aw, stringsAsFactors = FALSE)
+    names(z) <- paste0('funding_', names(z))
+    data.frame(z, funding_award = aw, stringsAsFactors = FALSE)
   }
-}), alldat$doi)
+})
+fund <- stats::setNames(fund, wrks$doi)
 fund <- bind_rows(fund, .id = "doi")
 
 ### funders
-author <- stats::setNames(lapply(alldat$author, function(z) {
+author <- stats::setNames(lapply(wrks$author, function(z) {
   if (length(z) == 0) {
     dplyr::data_frame()
   } else {
@@ -53,20 +58,23 @@ author <- stats::setNames(lapply(alldat$author, function(z) {
       if (all(is.na(tmp))) NA else paste0(tmp, collapse = ", ")
     }))
     z <- select(z, -starts_with("affiliation"))
-    data.frame(z, affiliation = aw, stringsAsFactors = FALSE)
+    names(z) <- paste0('author_', names(z))
+    data.frame(z, author_affiliation = aw, stringsAsFactors = FALSE)
   }
-}), alldat$doi)
+}), wrks$doi)
 author <- bind_rows(author, .id = "doi")
 
+fa <- dplyr::full_join(fund, author, by = "doi")
 
 # Combine ------------------------
 wrks[, sapply(wrks, class) == "list"] <- NULL
-orc[, sapply(orc, class) == "list"] <- NULL
-fa <- dplyr::full_join(fund, author, by = "doi")
-alldat <- dplyr::full_join(wrks, orc, by = "doi")
-alldat <- dplyr::full_join(alldat, fa, by = "doi")
+#orc[, sapply(orc, class) == "list"] <- NULL
+#alldat <- dplyr::full_join(wrks, orc, by = "doi")
+alldat <- dplyr::full_join(wrks, fa, by = "doi")
+
+
 
 # write
-readr::write_csv(alldat, 'crossref_and_orcid.csv')
+readr::write_csv(alldat, 'crossref_only.csv')
 
 
